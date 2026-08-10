@@ -87,6 +87,7 @@ extension NativeTextViewCoordinator {
                let scrollView = tv.enclosingScrollView {
                 bottomTextView.recalcOverscroll(for: scrollView, debugTag: "textDidChange")
                 (scrollView as? ClampedScrollView)?.clampToInsets()
+                bottomTextView.scheduleCaretRevealAfterContentResize()
             }
             return
         }
@@ -346,6 +347,7 @@ extension NativeTextViewCoordinator {
                let scrollView = tv.enclosingScrollView {
                 bottomTextView.recalcOverscroll(for: scrollView, debugTag: "textDidChange")
                 (scrollView as? ClampedScrollView)?.clampToInsets()
+                bottomTextView.scheduleCaretRevealAfterContentResize()
             }
         }
         previousActiveTokenIndices = activeTokenIndices

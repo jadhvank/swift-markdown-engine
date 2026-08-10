@@ -305,6 +305,28 @@ extension NativeTextView {
         PerfTrace.accumulate("reveal") { revealRangeIfNeeded(range) }
     }
 
+    /// `.fitsContent` editors live inside a page-level SwiftUI scroll view. On
+    /// Return at the document end AppKit asks for reveal before SwiftUI has
+    /// applied the new content height, so the first reveal can use old geometry.
+    /// Re-run it once on the next run loop after the height/binding update has
+    /// propagated. The end-of-document guard keeps ordinary middle-of-note
+    /// typing from moving the user's scroll position.
+    func scheduleCaretRevealAfterContentResize() {
+        guard configuration.heightBehavior == .fitsContent,
+              isEditable,
+              selectedRange().length == 0 else { return }
+        let length = (string as NSString).length
+        guard selectedRange().location >= max(0, length - 1) else { return }
+
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.configuration.heightBehavior == .fitsContent,
+                  self.isEditable,
+                  self.selectedRange().length == 0 else { return }
+            self.revealRangeIfNeeded(self.selectedRange())
+        }
+    }
+
     private func revealRangeIfNeeded(_ range: NSRange) {
         if suppressAutoRevealOnce {
             suppressAutoRevealOnce = false
@@ -403,30 +425,65 @@ extension NativeTextView {
     /// Used in `.fitsContent` where the inner scroll view cannot scroll.
     private func propagateCaretRevealToEnclosingScroller(range: NSRange) {
         guard let innerScrollView = enclosingScrollView,
-              let tlm = textLayoutManager,
-              let start = tlm.textContentManager?.location(
-                  tlm.documentRange.location, offsetBy: range.location
-              ) else { return }
+              let tlm = textLayoutManager else { return }
+        // A caret at documentEnd often has only TextKit's extra line fragment,
+        // and asking for a fragment exactly at that location can return
+        // nothing. Step back to the last real character, then prefer the
+        // actual caret segment when TextKit exposes one.
+        let documentLength = (string as NSString).length
+        let caretOffset = min(max(range.location, 0), documentLength)
+        let fallbackOffset = min(caretOffset, max(0, documentLength - 1))
+        var start: NSTextLocation?
+        for offset in [caretOffset, fallbackOffset] {
+            if let location = tlm.textContentManager?.location(
+                tlm.documentRange.location, offsetBy: offset
+            ) {
+                start = location
+                break
+            }
+        }
+        guard let start else { return }
         // Compute the caret rect in window coordinates so we can convert it
         // into whichever enclosing scroller we find.
         var caretRect: CGRect?
         tlm.enumerateTextLayoutFragments(from: start, options: [.ensuresLayout]) { fragment in
-            caretRect = fragment.layoutFragmentFrame.offsetBy(dx: 0, dy: self.frame.origin.y)
+            var rect = fragment.layoutFragmentFrame
+            for offset in [caretOffset, fallbackOffset] {
+                guard let location = tlm.textContentManager?.location(
+                    tlm.documentRange.location, offsetBy: offset
+                ) else { continue }
+                var found = false
+                tlm.enumerateTextSegments(in: NSTextRange(location: location), type: .standard, options: []) {
+                    _, segmentFrame, _, _ in
+                    if segmentFrame.height > 0 {
+                        rect = segmentFrame
+                        found = true
+                    }
+                    return false
+                }
+                if found { break }
+            }
+            // Layout frames are text-container-relative; the caret indicator and
+            // the outer scroll view are text-view-relative.
+            caretRect = rect.offsetBy(
+                dx: self.textContainerInset.width,
+                dy: self.textContainerInset.height
+            )
             return false
         }
         guard let rect = caretRect else { return }
-        // Convert from document-view space (container) to the inner scroll
-        // view's coordinate space, then to window, so we can convert into
-        // any ancestor we find.
-        let container = innerScrollView.documentView ?? self
-        let rectInWindow = container.convert(rect, to: nil)
+        // Convert from the text view to window space, then to whichever
+        // enclosing scroller we find.
+        let rectInWindow = self.convert(rect, to: nil)
         // Walk up past the inner scroll view looking for a parent NSScrollView.
         var view: NSView? = innerScrollView.superview
         while let v = view {
             if let outerScrollView = v as? NSScrollView, outerScrollView !== innerScrollView {
                 guard let outerDocView = outerScrollView.documentView else { return }
                 let rectInOuter = outerDocView.convert(rectInWindow, from: nil)
-                outerDocView.scrollToVisible(rectInOuter)
+                // Leave a small breathing room below the caret so the final
+                // glyph and insertion indicator are not flush with the clip.
+                outerDocView.scrollToVisible(rectInOuter.insetBy(dx: 0, dy: -8))
                 return
             }
             view = v.superview

@@ -164,7 +164,11 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
         guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return false }
         let bgColor = ts.attribute(.backgroundColor, at: range.location, effectiveRange: nil) as? NSColor
         guard let bgColor else { return false }
-        return isCodeBlockBackgroundColor(bgColor)
+        // Inline code uses the same background attribute as fenced code. Only a
+        // fenced-code paragraph carries the code-block paragraph metrics; using
+        // that distinction prevents an inline `token` from painting a full-width
+        // block behind the whole paragraph.
+        return isCodeBlockParagraph(at: range.location) && isCodeBlockBackgroundColor(bgColor)
     }
 
     private var hasThematicBreak: Bool {
@@ -208,9 +212,11 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
 
         // Only fenced code-block fragments get the full-width fill (first char must carry the code background).
         guard let color = ts.attribute(.backgroundColor, at: range.location, effectiveRange: nil) as? NSColor,
+              isCodeBlockParagraph(at: range.location),
               isCodeBlockBackgroundColor(color) else { return }
 
         let containerWidth = textLayoutManager?.textContainer?.size.width ?? layoutFragmentFrame.width
+        let surfaceInset = codeBlockSurfaceInset
 
         var effectiveHeight = layoutFragmentFrame.height
         if textLineFragments.count > 1,
@@ -234,9 +240,9 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
         NSGraphicsContext.current = nsContext
 
         let bgRect = CGRect(
-            x: point.x - layoutFragmentFrame.origin.x,
+            x: point.x - layoutFragmentFrame.origin.x + surfaceInset,
             y: snappedY,
-            width: containerWidth,
+            width: max(0, containerWidth - surfaceInset * 2),
             height: snappedMaxY - snappedY
         )
 
@@ -254,14 +260,72 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             path.fill()
         }
 
-        // The default engine highlighter is intentionally transparent, but a
-        // host that opts into a visible code surface should get an actual box,
-        // not only a barely perceptible tint. Keep the stroke dynamic so it
-        // follows the editor's light/dark appearance.
+        // TextKit lays out each physical code line as a separate fragment. A
+        // complete rectangle here therefore produced repeated horizontal
+        // stripes. Fill every line, but draw only the two continuous vertical
+        // edges plus the top edge of the first fragment and the bottom edge of
+        // the last fragment.
         let borderRect = bgRect.insetBy(dx: 0.5, dy: 0.5)
         guard !borderRect.isEmpty else { return }
         NSColor.separatorColor.withAlphaComponent(0.55).setStroke()
-        NSBezierPath(rect: borderRect).stroke()
+        let border = NSBezierPath()
+        border.lineWidth = 1
+        border.move(to: NSPoint(x: borderRect.minX, y: borderRect.minY))
+        border.line(to: NSPoint(x: borderRect.minX, y: borderRect.maxY))
+        border.move(to: NSPoint(x: borderRect.maxX, y: borderRect.minY))
+        border.line(to: NSPoint(x: borderRect.maxX, y: borderRect.maxY))
+        if isFirstCodeBlockFragment(range) {
+            border.move(to: NSPoint(x: borderRect.minX, y: borderRect.minY))
+            border.line(to: NSPoint(x: borderRect.maxX, y: borderRect.minY))
+        }
+        if isLastCodeBlockFragment(range) {
+            border.move(to: NSPoint(x: borderRect.minX, y: borderRect.maxY))
+            border.line(to: NSPoint(x: borderRect.maxX, y: borderRect.maxY))
+        }
+        border.stroke()
+    }
+
+    /// The code paragraph already indents its text by this amount. Half of that
+    /// indent leaves a small, intentional gutter between the glyphs and the
+    /// neutral surface while keeping the block aligned with the editor edges.
+    private var codeBlockSurfaceInset: CGFloat {
+        let indent = (textLayoutManager?.textContainer?.textView as? NativeTextView)?
+            .configuration.codeBlock.horizontalIndent ?? 12
+        return max(4, indent * 0.5)
+    }
+
+    private func isCodeBlockParagraph(at location: Int) -> Bool {
+        guard let ts = textStorage,
+              location >= 0,
+              location < ts.length,
+              let style = ts.attribute(.paragraphStyle, at: location, effectiveRange: nil) as? NSParagraphStyle else {
+            return false
+        }
+        let indent = (textLayoutManager?.textContainer?.textView as? NativeTextView)?
+            .configuration.codeBlock.horizontalIndent ?? 12
+        let tolerance: CGFloat = 0.5
+        return abs(style.headIndent - indent) < tolerance
+            && abs(style.firstLineHeadIndent - indent) < tolerance
+            && abs(style.tailIndent + indent) < tolerance
+    }
+
+    private func isCodeBlockBackground(at location: Int) -> Bool {
+        guard let ts = textStorage,
+              location >= 0,
+              location < ts.length,
+              let color = ts.attribute(.backgroundColor, at: location, effectiveRange: nil) as? NSColor else {
+            return false
+        }
+        return isCodeBlockParagraph(at: location) && isCodeBlockBackgroundColor(color)
+    }
+
+    private func isFirstCodeBlockFragment(_ range: NSRange) -> Bool {
+        let previous = range.location - 1
+        return previous < 0 || !isCodeBlockBackground(at: previous)
+    }
+
+    private func isLastCodeBlockFragment(_ range: NSRange) -> Bool {
+        !isCodeBlockBackground(at: NSMaxRange(range))
     }
 
     /// Returns active text-selection rectangles intersecting this fragment, in
