@@ -43,6 +43,7 @@ struct MarkdownHTMLRendererTests {
     @Test("task list keeps GFM checkbox markup (rich flavors strip it)")
     func taskList() {
         #expect(html("- [ ] todo\n- [x] done") == "<ul>\n<li><input type=\"checkbox\" disabled> todo</li>\n<li><input type=\"checkbox\" checked disabled> done</li>\n</ul>")
+        #expect(html("[] todo\n[x] done") == "<ul>\n<li><input type=\"checkbox\" disabled> todo</li>\n<li><input type=\"checkbox\" checked disabled> done</li>\n</ul>")
     }
 
     @Test("thematic break becomes hr")

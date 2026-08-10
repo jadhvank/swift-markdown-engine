@@ -4,7 +4,7 @@
 //
 //  Created by Luca Chen on 16.03.26.
 //
-//  Hit-test for `[ ]` / `[x]` checkbox glyphs and toggle the underlying text
+//  Hit-test for `[]` / `[ ]` / `[x]` checkbox glyphs and toggle the underlying text
 //  + `.taskCheckbox` attribute, then nudge the coordinator to restyle the
 //  enclosing paragraph.
 //
@@ -57,7 +57,8 @@ extension NativeTextView {
 
         let nsText = storage.string as NSString
         let checkboxText = nsText.substring(with: effectiveRange)
-        guard checkboxText.range(of: #"\[[ xX]\]"#, options: .regularExpression) != nil else { return nil }
+        guard checkboxText == "[]"
+                || checkboxText.range(of: #"\[[ xX]\]"#, options: .regularExpression) != nil else { return nil }
 
         let replacement = hitIsChecked ? "[ ]" : "[x]"
         if shouldChangeText(in: effectiveRange, replacementString: replacement) {

@@ -39,6 +39,10 @@ struct MarkdownLists {
     static let listRegex = try! NSRegularExpression(
         pattern: #"^\s*((?:(\d+)\.|[-•*+])(?:\s+\[[ xX]\])?\s+)"#
     )
+    /// Bare Notes task marker (`[]`, `[ ]`, `[x]`, `[X]`) at line start.
+    static let bareTaskRegex = try! NSRegularExpression(
+        pattern: #"^[ \t]*(\[(?:[ xX])?\])[ \t]*(?=[ \t\r\n]|$)"#
+    )
     /// Blockquote line: ≤3 indent + `>` marker run; group 1 = whitespace, group 2 = markers.
     // Trailing `[ \t]*` so the prefix length covers the space(s) the continuation
     // inserts (`markers + " "`) — otherwise exiting an empty quote leaves a stray
@@ -183,7 +187,14 @@ struct MarkdownLists {
             let safeLocTAB = min(affectedCharRange.location, nsText.length)
             let currentLineRange = nsText.lineRange(for: NSRange(location: safeLocTAB, length: 0))
             let currentLine = nsText.substring(with: currentLineRange)
-            if MarkdownLists.listRegex.firstMatch(in: currentLine, range: NSRange(location: 0, length: currentLine.utf16.count)) != nil {
+            let isListLine = MarkdownLists.listRegex.firstMatch(
+                in: currentLine,
+                range: NSRange(location: 0, length: currentLine.utf16.count)
+            ) != nil || MarkdownLists.bareTaskRegex.firstMatch(
+                in: currentLine,
+                range: NSRange(location: 0, length: currentLine.utf16.count)
+            ) != nil
+            if isListLine {
                 if let wsMatch = MarkdownLists.leadingWhitespaceRegex.firstMatch(in: currentLine, range: NSRange(location: 0, length: currentLine.utf16.count)) {
                     let ws = (currentLine as NSString).substring(with: wsMatch.range)
                     let level = MarkdownLists.indentLevel(from: ws)
@@ -318,6 +329,39 @@ struct MarkdownLists {
                     }
                 }
                 MarkdownLists.performEdit(textView, replace: affectedCharRange, with: newListItem)
+                return false
+            }
+
+            if let match = MarkdownLists.bareTaskRegex.firstMatch(
+                in: listLine,
+                range: NSRange(location: 0, length: listLine.utf16.count)
+            ) {
+                let contentStart = match.range.location + match.range.length
+                let contentLength = listLine.utf16.count - contentStart
+                let contentText = (listLine as NSString)
+                    .substring(with: NSRange(location: contentStart, length: contentLength))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if contentText.isEmpty {
+                    return removeLinePrefixAndExit(
+                        textView: textView,
+                        currentLineRange: currentLineRange,
+                        prefixLength: match.range.location + match.range.length
+                    )
+                }
+                let leadingWhitespace: String
+                if let wsMatch = MarkdownLists.leadingWhitespaceRegex.firstMatch(
+                    in: listLine,
+                    range: NSRange(location: 0, length: listLine.utf16.count)
+                ) {
+                    leadingWhitespace = (listLine as NSString).substring(with: wsMatch.range)
+                } else {
+                    leadingWhitespace = ""
+                }
+                MarkdownLists.performEdit(
+                    textView,
+                    replace: affectedCharRange,
+                    with: "\n" + leadingWhitespace + "[] "
+                )
                 return false
             }
         }

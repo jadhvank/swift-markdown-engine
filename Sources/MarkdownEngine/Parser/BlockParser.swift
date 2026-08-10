@@ -418,8 +418,10 @@ enum BlockParser {
     }
 
     /// A list-item line: optional indent, a bullet (`-`/`*`/`+`) or ordered marker (`1.`/`1)`), then a space/tab.
+    /// Notes also accept a bare task marker (`[]`, `[ ]`, `[x]`, `[X]`) at line start.
     static func isListItem(_ line: String) -> Bool {
         var rest = Substring(line).drop { $0 == " " || $0 == "\t" }
+        if isBareTaskItem(rest) { return true }
         guard let first = rest.first else { return false }
         if first == "-" || first == "*" || first == "+" {
             rest = rest.dropFirst()
@@ -434,6 +436,28 @@ enum BlockParser {
         // A space/tab must follow the marker — a bare `-`/`*`/`1.` stays literal (pre-AST bullet behavior).
         guard let after = rest.first else { return false }
         return after == " " || after == "\t"
+    }
+
+    /// A task marker without a bullet. This is intentionally line-oriented so
+    /// ordinary links (`[text](url)`) and incomplete links remain paragraphs.
+    private static func isBareTaskItem(_ line: Substring) -> Bool {
+        var rest = line
+        guard rest.first == "[" else { return false }
+        rest = rest.dropFirst()
+
+        if rest.first == "]" {
+            rest = rest.dropFirst()
+        } else {
+            guard let state = rest.first, state == " " || state == "x" || state == "X" else {
+                return false
+            }
+            rest = rest.dropFirst()
+            guard rest.first == "]" else { return false }
+            rest = rest.dropFirst()
+        }
+
+        guard let after = rest.first else { return true }
+        return after == " " || after == "\t" || after == "\r" || after == "\n"
     }
 
     /// A GFM table row: `^[ \t]*\|.+\|[ \t]*$` — outer pipes, content between.

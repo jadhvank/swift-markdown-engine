@@ -200,7 +200,8 @@ enum DocumentAST {
         return .list(range: range, items: items)
     }
 
-    /// Parse one list-item line: indent, marker, optional task checkbox, inline content.
+    /// Parse one list-item line: indent, marker (or a bare task marker), optional
+    /// checkbox, inline content.
     private static func listItem(_ lineRange: NSRange, _ ns: NSString, scoped: Bool = true, registry: ExtensionRegistry = .empty) -> ListItem {
         let end = NSMaxRange(lineRange)
         var i = lineRange.location
@@ -209,38 +210,72 @@ enum DocumentAST {
         let markerStart = i
         var ordered = false
         var number: Int?
-        let c = i < end ? ns.character(at: i) : 0
-        if c == 0x2D || c == 0x2A || c == 0x2B {        // - * +
-            i += 1
-        } else {                                        // N. / N)
-            var value = 0
-            var digits = 0
-            while i < end, ns.character(at: i) >= 0x30, ns.character(at: i) <= 0x39, digits < 9 {
-                value = value * 10 + Int(ns.character(at: i) - 0x30); i += 1; digits += 1
-            }
-            ordered = true
-            number = value
-            if i < end { i += 1 }                       // the `.` or `)`
-        }
-        let marker = NSRange(location: markerStart, length: i - markerStart)
-        if i < end, ns.character(at: i) == space || ns.character(at: i) == tab { i += 1 }
+        var marker: NSRange
         var checkbox: NSRange?
         var checked = false
-        if i + 2 < end, ns.character(at: i) == 0x5B, ns.character(at: i + 2) == 0x5D {   // [ x ]
-            let mid = ns.character(at: i + 1)
-            if mid == space || mid == 0x78 || mid == 0x58 {     // space / x / X
-                checkbox = NSRange(location: i, length: 3)
-                checked = (mid == 0x78 || mid == 0x58)
-                i += 3
-                if i < end, ns.character(at: i) == space || ns.character(at: i) == tab { i += 1 }
+
+        if let bareLength = bareTaskMarkerLength(in: ns, at: i, end: end) {
+            // Bare tasks have no bullet slot in source. The drawn checkbox
+            // still occupies the normal list gutter via the paragraph indent.
+            marker = NSRange(location: markerStart, length: 0)
+            checkbox = NSRange(location: i, length: bareLength)
+            checked = i + 1 < end && (ns.character(at: i + 1) == 0x78 || ns.character(at: i + 1) == 0x58)
+            i += bareLength
+        } else {
+            let c = i < end ? ns.character(at: i) : 0
+            if c == 0x2D || c == 0x2A || c == 0x2B {        // - * +
+                i += 1
+            } else {                                        // N. / N)
+                var value = 0
+                var digits = 0
+                while i < end, ns.character(at: i) >= 0x30, ns.character(at: i) <= 0x39, digits < 9 {
+                    value = value * 10 + Int(ns.character(at: i) - 0x30); i += 1; digits += 1
+                }
+                ordered = true
+                number = value
+                if i < end { i += 1 }                       // the `.` or `)`
+            }
+            marker = NSRange(location: markerStart, length: i - markerStart)
+            if i < end, ns.character(at: i) == space || ns.character(at: i) == tab { i += 1 }
+            if i + 2 < end, ns.character(at: i) == 0x5B, ns.character(at: i + 2) == 0x5D {   // [ x ]
+                let mid = ns.character(at: i + 1)
+                if mid == space || mid == 0x78 || mid == 0x58 {     // space / x / X
+                    checkbox = NSRange(location: i, length: 3)
+                    checked = (mid == 0x78 || mid == 0x58)
+                    i += 3
+                }
             }
         }
+        if i < end, ns.character(at: i) == space || ns.character(at: i) == tab { i += 1 }
         var contentEnd = end
         while contentEnd > i, isLineBreak(ns.character(at: contentEnd - 1)) { contentEnd -= 1 }
         let content = NSRange(location: i, length: max(0, contentEnd - i))
         return ListItem(range: lineRange, marker: marker, ordered: ordered, number: number,
                         checkbox: checkbox, checked: checked, indent: indent,
                         contentRange: content, inlines: scoped ? InlineParser.parse(ns, range: content, registry: registry) : [])
+    }
+
+    /// Returns the source length of a bare task marker at `start`, if its tail
+    /// is a line boundary/whitespace. `[ ]`, `[x]`, `[X]`, and the compact `[]`
+    /// form are all accepted.
+    private static func bareTaskMarkerLength(in ns: NSString, at start: Int, end: Int) -> Int? {
+        guard start < end, ns.character(at: start) == 0x5B else { return nil }
+        let length: Int
+        if start + 1 < end, ns.character(at: start + 1) == 0x5D {
+            length = 2
+        } else if start + 2 < end,
+                  (ns.character(at: start + 1) == space
+                   || ns.character(at: start + 1) == 0x78
+                   || ns.character(at: start + 1) == 0x58),
+                  ns.character(at: start + 2) == 0x5D {
+            length = 3
+        } else {
+            return nil
+        }
+        let after = start + length
+        guard after < end else { return length }
+        let c = ns.character(at: after)
+        return c == space || c == tab || isLineBreak(c) ? length : nil
     }
 
     private static func isLineBreak(_ c: unichar) -> Bool { c == 0x0A || c == 0x0D }

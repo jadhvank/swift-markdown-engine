@@ -52,6 +52,19 @@ struct ListParsingTests {
         #expect(items("- [ ] todo\n")?.first?.checkbox != nil)
     }
 
+    @Test func bareTaskCheckboxParsed() {
+        let unchecked = items("[] todo\n")?.first
+        #expect(unchecked?.ordered == false)
+        #expect(unchecked?.marker.length == 0)
+        #expect(unchecked?.checkbox?.length == 2)
+        #expect(unchecked?.checked == false)
+        #expect(unchecked?.contentRange.location == 3)
+
+        let checked = items("[x] done\n")?.first
+        #expect(checked?.checkbox?.length == 3)
+        #expect(checked?.checked == true)
+    }
+
     @Test func indentIsCaptured() {
         #expect(items("    - nested\n")?.first?.indent == 4)
     }
@@ -84,6 +97,8 @@ struct ListParsingTests {
         #expect(MarkdownStyler.taskSyntaxRange(at: 0, in: "- [ ] task") != nil)
         #expect(MarkdownStyler.taskSyntaxRange(at: 0, in: "* [ ] task") != nil)
         #expect(MarkdownStyler.taskSyntaxRange(at: 0, in: "+ [ ] task") != nil)
+        #expect(MarkdownStyler.taskSyntaxRange(at: 0, in: "[] task") != nil)
+        #expect(MarkdownStyler.taskSyntaxRange(at: 1, in: "[x] task") != nil)
     }
 
     /// A bare marker with no following space is NOT a list yet — typing `-`
@@ -97,5 +112,14 @@ struct ListParsingTests {
         #expect(BlockParser.isListItem("- "))
         #expect(BlockParser.isListItem("- x"))
         #expect(BlockParser.isListItem("1. x"))
+    }
+
+    @Test func bareTaskNeedsALineBoundary() {
+        #expect(BlockParser.isListItem("[]"))
+        #expect(BlockParser.isListItem("[] todo"))
+        #expect(BlockParser.isListItem("[ ] todo"))
+        #expect(BlockParser.isListItem("[x] done"))
+        #expect(!BlockParser.isListItem("[foo] text"))
+        #expect(!BlockParser.isListItem("[](url)"))
     }
 }

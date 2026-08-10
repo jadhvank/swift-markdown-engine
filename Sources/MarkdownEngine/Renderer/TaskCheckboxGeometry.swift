@@ -4,7 +4,7 @@
 //
 //  Created by Luca Chen on 09.07.26.
 //
-//  Shared geometry for the drawn task-checkbox square. The hidden `[ ] ` chars
+//  Shared geometry for the drawn task-checkbox square. The hidden `[] ` / `[ ] ` chars
 //  are collapsed to ~zero advance by the styler, so `drawPosition`/
 //  `boundingRect` of the box range sit at the task CONTENT's left edge. The
 //  square is right-aligned to that edge with a small gap (Obsidian-style),

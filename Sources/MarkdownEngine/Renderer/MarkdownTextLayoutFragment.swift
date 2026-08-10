@@ -253,6 +253,15 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             }
             path.fill()
         }
+
+        // The default engine highlighter is intentionally transparent, but a
+        // host that opts into a visible code surface should get an actual box,
+        // not only a barely perceptible tint. Keep the stroke dynamic so it
+        // follows the editor's light/dark appearance.
+        let borderRect = bgRect.insetBy(dx: 0.5, dy: 0.5)
+        guard !borderRect.isEmpty else { return }
+        NSColor.separatorColor.withAlphaComponent(0.55).setStroke()
+        NSBezierPath(rect: borderRect).stroke()
     }
 
     /// Returns active text-selection rectangles intersecting this fragment, in
