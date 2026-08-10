@@ -196,9 +196,10 @@ enum MarkdownASTStyler {
 
     /// Ordered-list display numbers computed across the WHOLE document, keyed by
     /// each ordered item's marker location. Positional, not the literal digit, so
-    /// any edit renumbers correctly; the count carries across a blank line (a
-    /// loose-list separator) so `1.`/`2.`⏎blank⏎`2.` shows 1,2,3 — real content
-    /// between lists resets it. First item of a run keeps its own start value.
+    /// any edit renumbers correctly; nested items use an outline path (`1.1.`,
+    /// `1.1.1.`) instead of flattening every depth into one sequence. The count
+    /// carries across a blank line (a loose-list separator) while real content
+    /// between lists resets it. First item of each level keeps its own start value.
     /// Like MarkdownLists.listRegex but also accepts `)` ordered markers (`5)`),
     /// matching the AST — used by the backward seed scan (group 2 = digits).
     private static let seedOrderedLineRegex = try! NSRegularExpression(
@@ -209,12 +210,48 @@ enum MarkdownASTStyler {
     /// hole between two scoped blocks" without materializing the substring.
     private static let nonWhitespace = CharacterSet.whitespacesAndNewlines.inverted
 
+    /// Numbering state for one ordered-list run. `nextNumbers` drives sibling
+    /// continuation; `currentNumbers` preserves the last number at each active
+    /// depth so a nested marker can render its full outline path.
+    private struct OrderedNumberingState {
+        var nextNumbers: [Int: Int] = [:]
+        var currentNumbers: [Int: Int] = [:]
+
+        mutating func consume(indent: Int, literal: Int) -> String {
+            prune(deeperThan: indent)
+            let number = nextNumbers[indent] ?? literal
+            currentNumbers[indent] = number
+            nextNumbers[indent] = number + 1
+            return currentNumbers.keys
+                .filter { $0 <= indent }
+                .sorted()
+                .compactMap { currentNumbers[$0].map(String.init) }
+                .joined(separator: ".")
+        }
+
+        mutating func reset(at indent: Int) {
+            nextNumbers = nextNumbers.filter { $0.key < indent }
+            currentNumbers = currentNumbers.filter { $0.key < indent }
+        }
+
+        mutating func reset() {
+            nextNumbers.removeAll(keepingCapacity: true)
+            currentNumbers.removeAll(keepingCapacity: true)
+        }
+
+        private mutating func prune(deeperThan indent: Int) {
+            nextNumbers = nextNumbers.filter { $0.key <= indent }
+            currentNumbers = currentNumbers.filter { $0.key <= indent }
+        }
+    }
+
     /// Replays the ordered-list run that continues ABOVE `loc` (scanning backward
     /// in the full source: same-indent items counted, blank lines skipped, real
-    /// content stops it) and returns the next number per indent. Lets a scoped
-    /// restyle that only sees a local window continue the document's numbering.
-    private static func seedOrderedCounters(above loc: Int, in ns: NSString) -> [Int: Int] {
-        guard loc > 0, loc <= ns.length else { return [:] }
+    /// content stops it) and returns the numbering state immediately before the
+    /// requested item. Lets a scoped restyle that only sees a local window
+    /// continue the document's hierarchical numbering.
+    private static func seedOrderedNumberingState(above loc: Int, in ns: NSString) -> OrderedNumberingState {
+        guard loc > 0, loc <= ns.length else { return OrderedNumberingState() }
         var runLines: [(indent: Int, number: Int?)] = []   // bottom-to-top; nil = bullet/other list
         // From the START of loc's line: callers pass a MARKER offset, which for
         // an indented item still sits inside its own line — scanning up from
@@ -240,21 +277,20 @@ enum MarkdownASTStyler {
             runLines.append(((ws as NSString).length, number))
             scan = lineRange.location
         }
-        var counters: [Int: Int] = [:]
+        var state = OrderedNumberingState()
         for item in runLines.reversed() {                    // replay top-to-bottom
             if let number = item.number {
-                counters[item.indent] = (counters[item.indent] ?? number) + 1
+                _ = state.consume(indent: item.indent, literal: number)
             } else {
-                counters[item.indent] = nil
+                state.reset(at: item.indent)
             }
-            for key in counters.keys where key > item.indent { counters[key] = nil }
         }
-        return counters
+        return state
     }
 
-    private static func computeOrderedDisplayNumbers(blocks: [BlockNode], ns: NSString) -> [Int: Int] {
-        var result: [Int: Int] = [:]
-        var counters: [Int: Int] = [:]
+    private static func computeOrderedDisplayNumbers(blocks: [BlockNode], ns: NSString) -> [Int: String] {
+        var result: [Int: String] = [:]
+        var numbering = OrderedNumberingState()
         // `blocks` is NOT the document: a scoped restyle keeps only the blocks that
         // intersect the scope, and a multi-region scope (caret paragraph + previous
         // caret paragraph, built on every click) drops everything between them —
@@ -274,7 +310,7 @@ enum MarkdownASTStyler {
                 // coordinator's forward walk hands us (list, list, list, blanks
                 // skipped), where re-seeding meant one full backward scan per
                 // item: 639 ms for a single Return in an 800-item loose list.
-                counters = [:]
+                numbering.reset()
                 needsSeed = true
             }
             contiguousEnd = NSMaxRange(block.range)
@@ -283,23 +319,23 @@ enum MarkdownASTStyler {
                 for item in items {
                     if item.ordered, let literal = item.number {
                         if needsSeed {
-                            counters = seedOrderedCounters(above: item.marker.location, in: ns)
+                            numbering = seedOrderedNumberingState(above: item.marker.location, in: ns)
                             needsSeed = false
                         }
-                        let n = counters[item.indent] ?? literal
-                        result[item.marker.location] = n
-                        counters[item.indent] = n + 1
+                        result[item.marker.location] = numbering.consume(
+                            indent: item.indent,
+                            literal: literal
+                        )
                     } else {
-                        counters[item.indent] = nil
+                        numbering.reset(at: item.indent)
                     }
-                    for key in counters.keys where key > item.indent { counters[key] = nil }
                 }
             case .blank:
                 break                     // blank lines keep the count (spacing, not a reset)
             case .paragraph(_, let inlines) where inlines.isEmpty:
                 break                     // an empty paragraph line is spacing too
             default:
-                counters = [:]            // real text/content ends the run
+                numbering.reset()         // real text/content ends the run
                 needsSeed = false         // a seed scan would stop on this line anyway
             }
         }
@@ -307,7 +343,7 @@ enum MarkdownASTStyler {
     }
 
     /// AST list-item decoration: indent paragraph, `•` bullet, checkbox + strikethrough, all caret-aware.
-    private static func styleListItem(_ item: ListItem, displayNumber: Int?, ctx: Ctx, into attrs: inout [StyledRange]) {
+    private static func styleListItem(_ item: ListItem, displayNumber: String?, ctx: Ctx, into attrs: inout [StyledRange]) {
         guard ctx.config.lists.helpersEnabled else { return }
 
         // Line content (item line minus its trailing newline).
@@ -353,7 +389,8 @@ enum MarkdownASTStyler {
         // raw source digits there, so the slot must revert to raw width (else a
         // kerned slot leaves a gap/overlap over the raw digits).
         let orderedOverlayActive = item.ordered && item.checkbox == nil && item.number != nil
-            && displayNumber != nil && displayNumber != item.number
+            && displayNumber != nil
+            && displayNumber != item.number.map(String.init)
             && !MarkdownStyler.caretRevealsOrderedMarker(caret: ctx.caret, syntax: orderedSyntax)
             && !ctx.selectionIntersects(orderedSyntax)
         // Keep the source punctuation (`.` or `)`) when overlaying, so a paren list stays a paren list.
@@ -516,7 +553,7 @@ enum MarkdownASTStyler {
         let extensionsByID: [String: any MarkdownExtension]
         let wikiLinkID: (NSRange) -> String?
         let scopedRanges: [NSRange]?
-        let orderedDisplayNumbers: [Int: Int]
+        let orderedDisplayNumbers: [Int: String]
 
         /// True when a non-empty selection overlaps `range` — the selection
         /// counterpart of `isActive` for elements that reveal on select.
@@ -555,7 +592,7 @@ enum MarkdownASTStyler {
             let multiplier = ctx.config.headings.fontMultiplier(for: level)
             let headingBase = NSFont(name: ctx.fontName, size: ctx.baseFont.pointSize * multiplier)
                 ?? .systemFont(ofSize: ctx.baseFont.pointSize * multiplier)
-            let headingFont = adding(.bold, to: headingBase)
+            let headingFont = adding(.bold, to: headingBase).font
             let lineHeight = ceil(headingFont.ascender - headingFont.descender + headingFont.leading) + 1
             let headingPara = NSMutableParagraphStyle()
             headingPara.minimumLineHeight = lineHeight
@@ -736,11 +773,19 @@ enum MarkdownASTStyler {
 
             case .emphasis(let kind, let range, let markers, let children):
                 let composed = adding(traits(for: kind), to: font)
-                attrs.append((content(of: markers), [.font: composed]))
+                var contentAttributes: [NSAttributedString.Key: Any] = [.font: composed.font]
+                if composed.syntheticItalic {
+                    // Pretendard ships no italic face. AppKit therefore returns
+                    // the regular face when asked for the `.italic` trait; use
+                    // its native obliqueness attribute as a font-independent
+                    // fallback so Markdown italic remains visibly italic.
+                    contentAttributes[.obliqueness] = syntheticItalicObliqueness
+                }
+                attrs.append((content(of: markers), contentAttributes))
                 if ctx.isActive(range) {
                     for marker in markers { attrs.append((marker, [.foregroundColor: ctx.theme.mutedText])) }
                 }
-                styleInlines(children, font: composed, ctx: ctx, into: &attrs)
+                styleInlines(children, font: composed.font, ctx: ctx, into: &attrs)
 
             case .ext(let node):
                 // Extension-contributed span: the extension supplies content
@@ -895,9 +940,20 @@ enum MarkdownASTStyler {
         }
     }
 
-    private static func adding(_ extra: NSFontDescriptor.SymbolicTraits, to font: NSFont) -> NSFont {
+    private static let syntheticItalicObliqueness = NSNumber(value: 0.2)
+
+    private static func adding(
+        _ extra: NSFontDescriptor.SymbolicTraits,
+        to font: NSFont
+    ) -> (font: NSFont, syntheticItalic: Bool) {
         let merged = font.fontDescriptor.symbolicTraits.union(extra)
-        return NSFont(descriptor: font.fontDescriptor.withSymbolicTraits(merged), size: font.pointSize) ?? font
+        let composed = NSFont(
+            descriptor: font.fontDescriptor.withSymbolicTraits(merged),
+            size: font.pointSize
+        ) ?? font
+        let needsSyntheticItalic = extra.contains(.italic)
+            && !composed.fontDescriptor.symbolicTraits.contains(.italic)
+        return (composed, needsSyntheticItalic)
     }
 
     private static func content(of markers: [NSRange]) -> NSRange {

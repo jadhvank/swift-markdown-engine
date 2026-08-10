@@ -106,14 +106,22 @@ struct OrderedListDisplayNumberingTests {
     }
 
     /// The seed scans BACKWARD from the item's marker — which for an indented
-    /// item still sits inside its own line, so it used to count that item and
-    /// every nested list rendered one too high with no gesture at all.
-    @Test("a nested ordered list starts at its own number")
+    /// item still sits inside its own line, so it must not count that item. A
+    /// nested item now paints its outline path while a rootless nested list
+    /// still starts at its own literal number.
+    @Test("nested ordered items use an outline path and start at their own number")
     func nestedListDoesNotCountItself() {
         #expect(overlays(style("- outer\n  1. a\n  2. b")).isEmpty)
         #expect(overlays(style("- outer\n\t1. a\n\t2. b")).isEmpty)
         #expect(overlays(style("  1. alpha")).isEmpty)
-        #expect(overlays(style("1. top\n  1. nested\n  2. nested")).isEmpty)
+        #expect(overlays(style("1. top\n  1. nested\n  2. nested")).map(\.text) == ["1.1.", "1.2."])
+    }
+
+    @Test("deep ordered items keep the full hierarchical path")
+    func deepNestedItemsUseHierarchicalDisplayNumbers() {
+        let text = "1. top\n  1. nested\n  2. nested\n    1. deep\n1. next\n"
+
+        #expect(overlays(style(text)).map(\.text) == ["1.1.", "1.2.", "1.2.1.", "2."])
     }
 
     /// A hole of blank lines between two scoped blocks is loose-list spacing,
