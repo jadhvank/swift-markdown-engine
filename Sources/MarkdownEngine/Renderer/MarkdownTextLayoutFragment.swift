@@ -22,8 +22,10 @@ extension NSAttributedString.Key {
     /// paints that many vertical bars in the left gutter.
     static let blockquoteLevel = NSAttributedString.Key("BlockquoteLevel")
     /// Marks a bullet-list marker char (`-`/`*`/`+`) whose glyph is hidden so
-    /// the fragment can paint a `•` in its place. Set to `true`.
+    /// the fragment can paint a depth-specific bullet in its place. Set to `true`.
     static let bulletMarker = NSAttributedString.Key("BulletListMarker")
+    /// Int nesting level for a hidden unordered-list marker. Top-level is 0.
+    static let bulletMarkerLevel = NSAttributedString.Key("BulletListMarkerLevel")
     static let orderedMarker = NSAttributedString.Key("OrderedListMarker")
     /// CGFloat — natural image width; presence flags block as overlay-rendered.
     static let scrollableBlockNaturalWidth = NSAttributedString.Key("ScrollableBlockNaturalWidth")
@@ -510,10 +512,10 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
 
     // MARK: - Bullet Markers
 
-    /// Paint a `•` over every hidden bullet marker (`.bulletMarker`). The
-    /// glyph is drawn in the same font as the source so its baseline matches
-    /// the surrounding text, and centered within the original marker char's
-    /// advance so a `•` of a different width still sits where `-`/`*`/`+` was.
+    /// Paint a depth-specific bullet over every hidden bullet marker. The glyph
+    /// is drawn in the same font as the source so its baseline matches the
+    /// surrounding text, and centered within the original marker char's
+    /// advance so a glyph of a different width still sits where `-`/`*`/`+` was.
     private func drawBulletMarkers(at point: CGPoint, in context: CGContext) {
         guard let ts = textStorage, let range = fragmentNSRange, range.length > 0 else { return }
         let selectionRanges: [NSRange] = {
@@ -546,7 +548,9 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             // an empty slot wherever the selection anchor wasn't in the marker.)
             let isSelected = selectionRanges.contains(where: { NSIntersectionRange($0, attrRange).length > 0 })
             let raw = storageString.substring(with: attrRange)
-            let glyph = (isSelected ? raw : "•") as NSString
+            let level = (ts.attribute(.bulletMarkerLevel, at: attrRange.location, effectiveRange: nil) as? Int) ?? 0
+            let glyphs = ["•", "◦", "▪", "▫"]
+            let glyph = (isSelected ? raw : glyphs[min(level, glyphs.count - 1)]) as NSString
             let glyphAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: theme.bodyText]
 
             let markerWidth = (raw as NSString).size(withAttributes: [.font: font]).width

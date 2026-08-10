@@ -349,6 +349,11 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
                 self?.handleUnorderedListNotification(notification)
             })
         }
+        if let name = bus.applyTaskListRequest {
+            busObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
+                self?.handleTaskListNotification(notification)
+            })
+        }
         if let name = bus.applyOrderedListRequest {
             busObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
                 self?.handleOrderedListNotification(notification)
@@ -438,6 +443,7 @@ public final class NativeTextViewCoordinator: NSObject, NSTextViewDelegate {
     }
 }
 
+
 extension NSTextView {
     func viewRect(forCharacterRange range: NSRange, using bridge: LayoutBridge?) -> CGRect? {
         guard range.location != NSNotFound,
@@ -466,4 +472,3 @@ extension NSTextView {
         return boundingRect
     }
 }
-

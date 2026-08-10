@@ -258,6 +258,71 @@ extension NativeTextViewWrapper.Coordinator {
         applyList(prefix: "- ")
     }
 
+    /// Convert the current line into a task-list item while retaining the line's
+    /// content attributes. This is deliberately a Markdown source edit rather
+    /// than a rich-text checkbox attribute, so the saved document remains
+    /// portable GFM (`- [ ] text`).
+    @objc func didMarkdownTaskList(_ sender: Any?) {
+        guard let tv = textView else { return }
+        let nsText = tv.string as NSString
+        let selection = tv.selectedRange()
+        let lineRange = nsText.lineRange(for: selection)
+        let originalLine = nsText.substring(with: lineRange)
+        let lineBody = originalLine.trimmingCharacters(in: .newlines)
+        let body = lineBody as NSString
+
+        var contentStart = 0
+        while contentStart < body.length {
+            let character = body.character(at: contentStart)
+            guard character == 0x20 || character == 0x09 else { break }
+            contentStart += 1
+        }
+        let leadingWhitespace = body.substring(to: contentStart)
+
+        if contentStart < body.length {
+            let marker = body.character(at: contentStart)
+            if marker == 0x2D || marker == 0x2A || marker == 0x2B {
+                contentStart += 1
+                while contentStart < body.length {
+                    let character = body.character(at: contentStart)
+                    guard character == 0x20 || character == 0x09 else { break }
+                    contentStart += 1
+                }
+            }
+        }
+
+        if contentStart + 2 < body.length,
+           body.character(at: contentStart) == 0x5B,
+           body.character(at: contentStart + 2) == 0x5D,
+           [0x20, 0x78, 0x58].contains(body.character(at: contentStart + 1)) {
+            contentStart += 3
+            while contentStart < body.length {
+                let character = body.character(at: contentStart)
+                guard character == 0x20 || character == 0x09 else { break }
+                contentStart += 1
+            }
+        }
+
+        let content = body.substring(from: contentStart)
+        let prefix = leadingWhitespace + "- [ ] "
+        let suffix = originalLine.hasSuffix("\n") ? "\n" : ""
+        let replacement = prefix + content + suffix
+        let contentRange = body.range(of: content)
+        let retained = contentRange.location == NSNotFound
+            ? NSRange(location: lineRange.location, length: 0)
+            : NSRange(location: lineRange.location + contentRange.location, length: contentRange.length)
+
+        guard replacePreservingAttributes(
+            in: lineRange,
+            with: replacement,
+            retaining: retained,
+            at: (prefix as NSString).length
+        ) else { return }
+
+        let newSelectionLocation = lineRange.location + (prefix as NSString).length
+        tv.setSelectedRange(NSRange(location: newSelectionLocation, length: (content as NSString).length))
+    }
+
     @objc func didMarkdownOrderedList(_ sender: Any?) {
         applyList(prefix: "1. ")
     }

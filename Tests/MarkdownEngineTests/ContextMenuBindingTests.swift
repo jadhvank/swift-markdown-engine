@@ -95,6 +95,12 @@ struct ContextMenuBindingTests {
         #expect(result.contains("[[Target Note|ABC-123]]"))
     }
 
+    @Test("Task list keeps the wiki link's UUID in the binding")
+    func taskListPreservesLinkID() async {
+        let result = await settledText { $0.didMarkdownTaskList(nil) }
+        #expect(result.contains("- [ ] Intro [[Target Note|ABC-123]] and more text."))
+    }
+
     /// Selection wrapping replaces the whole selected range — the same
     /// mechanism as the line handlers, reached differently.
     @Test("Bold over a selection containing the link keeps its UUID")

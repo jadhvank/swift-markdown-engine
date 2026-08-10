@@ -210,6 +210,8 @@ public struct MarkdownEditorBus: Sendable {
     public var applyBlockquoteRequest: Notification.Name?
     /// Posted by the host UI to request the engine apply unordered list styling.
     public var applyUnorderedListRequest: Notification.Name?
+    /// Posted by the host UI to request the engine apply a task-list item (`- [ ]`).
+    public var applyTaskListRequest: Notification.Name?
     /// Posted by the host UI to request the engine apply ordered list styling.
     public var applyOrderedListRequest: Notification.Name?
     /// Posted by the host UI to insert a Markdown link.
@@ -265,6 +267,7 @@ public struct MarkdownEditorBus: Sendable {
         applyInlineCodeRequest: Notification.Name? = nil,
         applyBlockquoteRequest: Notification.Name? = nil,
         applyUnorderedListRequest: Notification.Name? = nil,
+        applyTaskListRequest: Notification.Name? = nil,
         applyOrderedListRequest: Notification.Name? = nil,
         applyLinkRequest: Notification.Name? = nil,
         applyCodeBlockRequest: Notification.Name? = nil,
@@ -288,6 +291,7 @@ public struct MarkdownEditorBus: Sendable {
         self.applyInlineCodeRequest = applyInlineCodeRequest
         self.applyBlockquoteRequest = applyBlockquoteRequest
         self.applyUnorderedListRequest = applyUnorderedListRequest
+        self.applyTaskListRequest = applyTaskListRequest
         self.applyOrderedListRequest = applyOrderedListRequest
         self.applyLinkRequest = applyLinkRequest
         self.applyCodeBlockRequest = applyCodeBlockRequest

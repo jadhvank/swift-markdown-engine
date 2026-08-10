@@ -26,6 +26,20 @@ struct MarkdownASTStylerTests {
         return result
     }
 
+    @Test("nested unordered-list markers carry their display depth")
+    func nestedBulletMarkersCarryDepth() {
+        let text = "- top\n  - nested\n    - deep\n"
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: text, fontName: fontName, fontSize: base
+        )
+        let levels = attrs.compactMap { entry -> Int? in
+            guard (entry.attributes[.bulletMarker] as? Bool) == true else { return nil }
+            return entry.attributes[.bulletMarkerLevel] as? Int
+        }
+
+        #expect(levels == [0, 1, 2])
+    }
+
     /// Per-keystroke perf: scoping a restyle to the edited paragraph must produce
     /// the EXACT same attributes within that paragraph as a full-document style.
     /// This is the safety net for the `scopedRanges` fast path — it can't diverge

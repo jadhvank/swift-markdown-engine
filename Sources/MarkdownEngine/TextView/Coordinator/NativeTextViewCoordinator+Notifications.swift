@@ -48,6 +48,10 @@ extension NativeTextViewCoordinator {
         didMarkdownUnorderedList(nil)
     }
 
+    @objc func handleTaskListNotification(_ notification: Notification) {
+        didMarkdownTaskList(nil)
+    }
+
     @objc func handleOrderedListNotification(_ notification: Notification) {
         didMarkdownOrderedList(nil)
     }
