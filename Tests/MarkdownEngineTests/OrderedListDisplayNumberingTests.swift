@@ -107,9 +107,9 @@ struct OrderedListDisplayNumberingTests {
 
     /// The seed scans BACKWARD from the item's marker — which for an indented
     /// item still sits inside its own line, so it must not count that item. A
-    /// nested item now paints its outline path while a rootless nested list
-    /// still starts at its own literal number.
-    @Test("nested ordered items use an outline path and start at their own number")
+    /// nested item now paints its outline path. A new nested level starts at 1
+    /// even when Enter previously advanced the raw marker to 2, 3, and so on.
+    @Test("nested ordered items use an outline path and start at one")
     func nestedListDoesNotCountItself() {
         #expect(overlays(style("- outer\n  1. a\n  2. b")).isEmpty)
         #expect(overlays(style("- outer\n\t1. a\n\t2. b")).isEmpty)
@@ -119,7 +119,7 @@ struct OrderedListDisplayNumberingTests {
 
     @Test("deep ordered items keep the full hierarchical path")
     func deepNestedItemsUseHierarchicalDisplayNumbers() {
-        let text = "1. top\n  1. nested\n  2. nested\n    1. deep\n1. next\n"
+        let text = "1. top\n  2. nested\n  3. nested\n    4. deep\n1. next\n"
 
         #expect(overlays(style(text)).map(\.text) == ["1.1.", "1.2.", "1.2.1.", "2."])
     }

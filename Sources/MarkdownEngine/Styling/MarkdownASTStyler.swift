@@ -199,7 +199,8 @@ enum MarkdownASTStyler {
     /// any edit renumbers correctly; nested items use an outline path (`1.1.`,
     /// `1.1.1.`) instead of flattening every depth into one sequence. The count
     /// carries across a blank line (a loose-list separator) while real content
-    /// between lists resets it. First item of each level keeps its own start value.
+    /// between lists resets it. A new nested level starts at 1 so the editor's
+    /// automatic `2.`, `3.` continuation markers become `1.1.`, `1.1.1.`.
     /// Like MarkdownLists.listRegex but also accepts `)` ordered markers (`5)`),
     /// matching the AST — used by the backward seed scan (group 2 = digits).
     private static let seedOrderedLineRegex = try! NSRegularExpression(
@@ -219,7 +220,9 @@ enum MarkdownASTStyler {
 
         mutating func consume(indent: Int, literal: Int) -> String {
             prune(deeperThan: indent)
-            let number = nextNumbers[indent] ?? literal
+            let hasOrderedAncestor = currentNumbers.keys.contains { $0 < indent }
+            let firstNestedNumber = hasOrderedAncestor && nextNumbers[indent] == nil ? 1 : literal
+            let number = nextNumbers[indent] ?? firstNestedNumber
             currentNumbers[indent] = number
             nextNumbers[indent] = number + 1
             return currentNumbers.keys
