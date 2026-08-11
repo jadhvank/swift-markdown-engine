@@ -481,9 +481,28 @@ public struct LinkStyle: Sendable {
     /// without a target).
     public var incompleteLinkAlpha: CGFloat
 
-    public init(activeLinkAlpha: CGFloat = 0.55, incompleteLinkAlpha: CGFloat = 0.7) {
+    /// Whether a link target without a URL scheme is rewritten as `https://…`.
+    ///
+    /// The default `true` preserves the long-standing convenience for bare domains: a reader who writes
+    /// `[Docs](example.com)` expects a working web link, and the engine cannot tell that string apart from
+    /// a host by shape alone.
+    ///
+    /// Set it to `false` in a document that resolves **relative** targets against its own directory —
+    /// `[report.pdf](Attachments/report.pdf)`. With promotion on, such a target becomes
+    /// `https://Attachments/report.pdf` and clicking it sends the reader's browser after a host named
+    /// `Attachments`. With promotion off the target keeps its relative form, and clicks reach the embedder
+    /// through ``NativeTextViewWrapper/onLinkClick`` instead of the system opener, so the app can resolve
+    /// the path itself.
+    public var promotesSchemelessTargetsToHTTPS: Bool
+
+    public init(
+        activeLinkAlpha: CGFloat = 0.55,
+        incompleteLinkAlpha: CGFloat = 0.7,
+        promotesSchemelessTargetsToHTTPS: Bool = true
+    ) {
         self.activeLinkAlpha = activeLinkAlpha
         self.incompleteLinkAlpha = incompleteLinkAlpha
+        self.promotesSchemelessTargetsToHTTPS = promotesSchemelessTargetsToHTTPS
     }
 
     public static let `default` = LinkStyle()

@@ -904,6 +904,16 @@ extension NativeTextViewCoordinator {
             }
         }
         guard let target = WikiLinkService.resolveIdentifier(link: link, textView: textView, at: charIndex) else {
+            // A schemeless target only survives styling when the embedder turned promotion off
+            // (`LinkStyle.promotesSchemelessTargetsToHTTPS`), which means the document resolves it against
+            // its own directory. Handing that to the system opener sends the browser after a host named
+            // after the first path segment, so route it to the embedder and report the click as handled.
+            if let url = link as? URL, url.scheme == nil {
+                let reference = url.relativeString
+                (textView as? NativeTextView)?.linkClickDidNavigate = true
+                DispatchQueue.main.async { self.onLinkClick?(reference) }
+                return true
+            }
             // Web link (URL-valued): returning false lets AppKit open the URL
             // (the mouseDown fallback mirrors that). Opening a link is navigation
             // too — flag it so mouseDown restores the pre-click caret.

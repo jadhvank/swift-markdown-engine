@@ -830,7 +830,13 @@ enum MarkdownASTStyler {
     ) {
         attrs.append((range, [.spellingState: 0]))
         var urlString = ctx.ns.substring(with: urlRange)
-        if !urlString.contains("://") { urlString = "https://\(urlString)" }
+        // A schemeless target is a bare domain to most documents and a document-relative path to some.
+        // The shape cannot tell them apart, so the embedder decides (see `LinkStyle`). Promotion stays on
+        // by default; a document whose targets resolve against its own directory turns it off and keeps
+        // the relative form, which `clickedOnLink` then routes to the embedder instead of the opener.
+        if ctx.config.link.promotesSchemelessTargetsToHTTPS, !urlString.contains("://") {
+            urlString = "https://\(urlString)"
+        }
         let isActive = ctx.isActive(range)
         if let url = URL(string: urlString) {
             if isActive {

@@ -26,6 +26,56 @@ struct MarkdownASTStylerTests {
         return result
     }
 
+    /// Effective `.link` URL at `pos`, or nil when the range carries no link attribute.
+    private func linkURL(in attrs: [StyledRange], at pos: Int) -> URL? {
+        var result: URL?
+        for (range, a) in attrs where NSLocationInRange(pos, range) {
+            if let u = a[.link] as? URL { result = u }
+        }
+        return result
+    }
+
+    @Test("a schemeless target is promoted to https by default")
+    func schemelessTargetPromotedByDefault() {
+        let text = "[Docs](example.com)\n"
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: text, fontName: fontName, fontSize: base
+        )
+
+        #expect(linkURL(in: attrs, at: 2)?.absoluteString == "https://example.com")
+    }
+
+    /// A document that resolves targets against its own directory turns promotion off. Without this the
+    /// engine rewrites `Attachments/report.pdf` into `https://Attachments/report.pdf`, and the system
+    /// opener sends the reader's browser after a host named `Attachments`.
+    @Test("promotion off keeps a relative target relative")
+    func relativeTargetKeptRelativeWhenPromotionDisabled() {
+        var configuration = MarkdownEditorConfiguration.default
+        configuration.link.promotesSchemelessTargetsToHTTPS = false
+        let text = "[report.pdf](Attachments/report.pdf)\n"
+
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: text, fontName: fontName, fontSize: base, configuration: configuration
+        )
+
+        let url = linkURL(in: attrs, at: 2)
+        #expect(url?.scheme == nil)
+        #expect(url?.relativeString == "Attachments/report.pdf")
+    }
+
+    @Test("promotion off leaves an explicit scheme untouched")
+    func explicitSchemeUntouchedWhenPromotionDisabled() {
+        var configuration = MarkdownEditorConfiguration.default
+        configuration.link.promotesSchemelessTargetsToHTTPS = false
+        let text = "[Docs](https://example.com/a)\n"
+
+        let attrs = MarkdownASTStyler.styleAttributes(
+            text: text, fontName: fontName, fontSize: base, configuration: configuration
+        )
+
+        #expect(linkURL(in: attrs, at: 2)?.absoluteString == "https://example.com/a")
+    }
+
     @Test("nested unordered-list markers carry their display depth")
     func nestedBulletMarkersCarryDepth() {
         let text = "- top\n  - nested\n    - deep\n"
