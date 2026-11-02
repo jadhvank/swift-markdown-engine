@@ -48,6 +48,11 @@ public struct MarkdownEditorConfiguration: Sendable {
     /// Centered reading-column width; wide tables break out to full width. nil = full width (default).
     public var readingWidth: CGFloat?
     public var spellChecking: SpellCheckingPolicy
+    /// Room kept under the caret's line when a `.fitsContent` editor asks its enclosing scroll view to
+    /// reveal the caret. The default is a hairline; an embedder with chrome floating over the bottom of
+    /// the page, or one that wants typing to stay away from the edge, raises it and gives the page
+    /// matching trailing space. Capped at a third of the visible height so it can't fight a short pane.
+    public var caretRevealBottomMargin: CGFloat = 8
     /// How the editor resolves its own height.
     ///
     /// - `.scrolls` (default): the editor scrolls internally within whatever
@@ -299,19 +304,23 @@ public struct ListStyle: Sendable {
     public var maximumNestingLevel: Int
     /// Extra line height added on top of the default to give list items room.
     public var extraLineHeight: CGFloat
+    /// Unordered-list marker size as a fraction of the line's font size.
+    public var bulletSizeRatio: CGFloat
 
     public init(
         helpersEnabled: Bool = true,
         autoClosePairsEnabled: Bool = true,
         indentPerLevel: CGFloat = 27.5,
         maximumNestingLevel: Int = 3,
-        extraLineHeight: CGFloat = 2
+        extraLineHeight: CGFloat = 2,
+        bulletSizeRatio: CGFloat = 0.38
     ) {
         self.helpersEnabled = helpersEnabled
         self.autoClosePairsEnabled = autoClosePairsEnabled
         self.indentPerLevel = indentPerLevel
         self.maximumNestingLevel = maximumNestingLevel
         self.extraLineHeight = extraLineHeight
+        self.bulletSizeRatio = bulletSizeRatio
     }
 
     public static let `default` = ListStyle()

@@ -37,6 +37,50 @@ extension NSAttributedString.Key {
     static let scrollableBlockFullRange = NSAttributedString.Key("ScrollableBlockFullRange")
 }
 
+/// The marker one unordered-list nesting level draws. Drawn as a shape rather than a glyph: `◦ ▪ ▫` fall back
+/// to whatever font carries them, so as glyphs each level had its own size and baseline. The shapes repeat,
+/// so every depth has a marker no matter how deep a list goes.
+enum BulletMarkerShape: CaseIterable, Equatable {
+    case disc, circle, square, hollowSquare
+
+    static func forLevel(_ level: Int) -> BulletMarkerShape {
+        let shapes = allCases
+        return shapes[max(level, 0) % shapes.count]
+    }
+
+    /// Filled and hollow shapes of one family read as the same size only when the hollow ones keep the full
+    /// outer extent, so the stroke is drawn inside it. Squares are trimmed a little: at the same width their
+    /// corners make them look heavier than a circle.
+    func draw(centeredAt center: CGPoint, size: CGFloat, color: NSColor) {
+        let strokeWidth: CGFloat = max(1, size * 0.2)
+        let extent: CGFloat
+        switch self {
+        case .disc, .circle: extent = size
+        case .square, .hollowSquare: extent = size * 0.88
+        }
+        let rect = CGRect(x: center.x - extent / 2, y: center.y - extent / 2, width: extent, height: extent)
+        let inset = rect.insetBy(dx: strokeWidth / 2, dy: strokeWidth / 2)
+        switch self {
+        case .disc:
+            color.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+        case .circle:
+            color.setStroke()
+            let path = NSBezierPath(ovalIn: inset)
+            path.lineWidth = strokeWidth
+            path.stroke()
+        case .square:
+            color.setFill()
+            NSBezierPath(rect: rect).fill()
+        case .hollowSquare:
+            color.setStroke()
+            let path = NSBezierPath(rect: inset)
+            path.lineWidth = strokeWidth
+            path.stroke()
+        }
+    }
+}
+
 final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
 
     /// Horizontal space (points) each blockquote nesting level occupies —
@@ -621,18 +665,25 @@ final class MarkdownTextLayoutFragment: NSTextLayoutFragment {
             // an empty slot wherever the selection anchor wasn't in the marker.)
             let isSelected = selectionRanges.contains(where: { NSIntersectionRange($0, attrRange).length > 0 })
             let raw = storageString.substring(with: attrRange)
-            let level = (ts.attribute(.bulletMarkerLevel, at: attrRange.location, effectiveRange: nil) as? Int) ?? 0
-            let glyphs = ["•", "◦", "▪", "▫"]
-            let glyph = (isSelected ? raw : glyphs[min(level, glyphs.count - 1)]) as NSString
-            let glyphAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: theme.bodyText]
-
             let markerWidth = (raw as NSString).size(withAttributes: [.font: font]).width
-            let glyphWidth = glyph.size(withAttributes: glyphAttrs).width
-            let xOffset = max(0, (markerWidth - glyphWidth) / 2)
-            // Flipped context: text origin is its top edge, baseline sits one
-            // ascent below — so top = baseline − ascent aligns the glyph.
-            let topY = pos.baselineY - font.ascender
-            glyph.draw(at: CGPoint(x: pos.x + xOffset, y: topY), withAttributes: glyphAttrs)
+            if isSelected {
+                let glyphAttrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: theme.bodyText]
+                let glyph = raw as NSString
+                let glyphWidth = glyph.size(withAttributes: glyphAttrs).width
+                let xOffset = max(0, (markerWidth - glyphWidth) / 2)
+                // Flipped context: text origin is its top edge, baseline sits one
+                // ascent below — so top = baseline − ascent aligns the glyph.
+                let topY = pos.baselineY - font.ascender
+                glyph.draw(at: CGPoint(x: pos.x + xOffset, y: topY), withAttributes: glyphAttrs)
+                return
+            }
+            let level = (ts.attribute(.bulletMarkerLevel, at: attrRange.location, effectiveRange: nil) as? Int) ?? 0
+            let ratio = (self.textLayoutManager?.textContainer?.textView as? NativeTextView)?
+                .configuration.lists.bulletSizeRatio ?? ListStyle.default.bulletSizeRatio
+            BulletMarkerShape.forLevel(level).draw(
+                centeredAt: CGPoint(x: pos.x + markerWidth / 2, y: pos.baselineY - font.xHeight / 2),
+                size: max(3, font.pointSize * ratio),
+                color: theme.bodyText)
         }
     }
 

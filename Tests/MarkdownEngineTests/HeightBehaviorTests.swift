@@ -7,11 +7,8 @@
 //  empty-document minimum height for the .fitsContent height behavior —
 //  headless (no window).
 //
-//  Known coverage gap: `propagateCaretRevealToEnclosingScroller` (caret
-//  visibility in a tall .fitsContent block). This requires a live
-//  nested-scroll-view hierarchy (SwiftUI ScrollView hosting our
-//  NSScrollView) which cannot be constructed in a headless test.
-//  Verify manually in a host app.
+//  Caret visibility in a tall .fitsContent block needs a live nested-scroll-view
+//  hierarchy and lives in `FitsContentCaretRevealTests`.
 //
 
 import AppKit

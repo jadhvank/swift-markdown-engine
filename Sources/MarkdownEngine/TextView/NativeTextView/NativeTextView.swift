@@ -26,6 +26,8 @@ final class NativeTextView: NSTextView {
     /// Coalesces wide-table overlay updates to once per runloop (resize fires many per frame).
     var pendingWideTableOverlayUpdate = false
     var suppressAutoRevealOnce: Bool = false
+    /// Only the newest edit's caret reveal may keep retrying.
+    var pendingCaretRevealGeneration = 0
     // Set by clickedOnLink during a mouseDown: did the delegate fire (so
     // mouseDown can re-dispatch a click AppKit dropped), and did it navigate
     // (so the pre-click caret is restored — a link click isn't caret placement).
@@ -99,6 +101,12 @@ final class NativeTextView: NSTextView {
         let nsText = self.string as NSString
         let paragraph = nsText.paragraphRange(for: marked)
         coord.restyleParagraphs([paragraph], in: self)
+        // A composing syllable can wrap onto a new line, and textDidChange won't run until it commits. Korean
+        // is composed all the time, so without this the new line stays outside the frame while it is typed.
+        if configuration.heightBehavior == .fitsContent, let scrollView = enclosingScrollView {
+            recalcOverscroll(for: scrollView, debugTag: "markedText")
+            scheduleCaretRevealAfterContentResize()
+        }
     }
 
     deinit { caretIndicatorObservation?.invalidate() }
