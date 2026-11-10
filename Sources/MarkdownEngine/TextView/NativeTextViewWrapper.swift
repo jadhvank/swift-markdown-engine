@@ -430,6 +430,11 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         textView.onPasteImage = onPasteImage
         textView.isCursorExcluded = isCursorExcluded
         textView.setPlaceholder(placeholder)
+        // These closures carry the embedder's per-render state (for a document that resolves relative links,
+        // which folder they resolve against). Hand over the newest ones before the unchanged-text early return
+        // below: a view reused for another document with an identical body would keep calling the first one's.
+        context.coordinator.onLinkClick = onLinkClick
+        context.coordinator.onBuildContextMenu = onBuildContextMenu
         // Sync heightBehavior across all three layers (scroll view, text view,
         // coordinator) so a runtime switch fully reconfigures.
         let heightBehaviorChanged = textView.configuration.heightBehavior != configuration.heightBehavior
@@ -624,7 +629,6 @@ public struct NativeTextViewWrapper: NSViewRepresentable {
         }
 
         context.coordinator.onCaretRectChange = onCaretRectChange
-        context.coordinator.onBuildContextMenu = onBuildContextMenu
         context.coordinator.onInlineSelectionChange = onInlineSelectionChange
         context.coordinator.onInlinePreviewKey = onInlinePreviewKey
         context.coordinator.onCodeBlockSelectionChange = onCodeBlockSelectionChange
